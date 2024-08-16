@@ -1,13 +1,13 @@
 [package]
 name = "ljxacom"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Zhang Xiaoyu <zhangxiaoyu1017@gmail.com>"]
 description = "Rust bindings for Keyence LJ-X8000A CommLib"
 homepage = "https://github.com/zhxiaoyu/ljxacom"
 repository = "https://github.com/zhxiaoyu/ljxacom"
 license = "MIT"
-keywords = ["Kence", "ljxacom", "LJXA", "LJX8","LJ-X8000A"]
+keywords = ["Keyence", "ljxacom", "LJXA", "LJX8","LJ-X8000A"]
 
 [dependencies]
 
