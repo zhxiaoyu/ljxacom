@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::thread::sleep;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 pub struct LJX8If {
     stream: TcpStream,
 }
@@ -14,6 +14,60 @@ impl LJX8If {
         self.stream.shutdown(std::net::Shutdown::Both)?;
         Ok(())
     }
+    pub fn ljx8_if_reboot_controller(&mut self) -> Result<(), std::io::Error> {
+        self.send_single_command(0x02)?;
+        Ok(())
+    }
+    pub fn ljx8_if_return_to_factory_setting(&mut self) -> Result<(), std::io::Error> {
+        self.send_single_command(0x03)?;
+        Ok(())
+    }
+    pub fn ljx8_if_control_laser(&mut self, by_state: u8) -> Result<(), std::io::Error> {
+        let senddata = [0x2A, 0x00, 0x00, 0x00, by_state, 0x00, 0x00, 0x00];
+        self.my_any_command(&senddata)?;
+        Ok(())
+    }
+    pub fn ljx8_if_get_error(
+        &mut self,
+        by_received_max: u8,
+    ) -> Result<(u8, Vec<u16>), std::io::Error> {
+        let receive_buffer = self.send_single_command(0x04)?;
+        let number_of_error = receive_buffer[28];
+        let copy_num;
+        if number_of_error >= 1 {
+            if by_received_max > number_of_error {
+                copy_num = number_of_error;
+            } else {
+                copy_num = by_received_max;
+            }
+            let mut pw_err_code = vec![0u16; copy_num as usize];
+            for i in 0..copy_num as usize {
+                pw_err_code[i] =
+                    u16::from_le_bytes(receive_buffer[32 + i * 2..34 + i * 2].try_into().unwrap());
+            }
+            return Ok((number_of_error, pw_err_code));
+        }
+        Ok((number_of_error, vec![]))
+    }
+    pub fn ljx8_if_clear_error(&mut self, w_err_code: u16) -> Result<(), std::io::Error> {
+        let w_err_code_bytes = w_err_code.to_le_bytes();
+        let (low_byte, high_byte) = (w_err_code_bytes[0], w_err_code_bytes[1]);
+        let senddata = [0x05, 0x00, 0x00, 0x00, low_byte, high_byte, 0x00, 0x00];
+        self.my_any_command(&senddata)?;
+        Ok(())
+    }
+    pub fn ljx8_if_trg_error_reset(&mut self) -> Result<(), std::io::Error> {
+        self.send_single_command(0x2B)?;
+        Ok(())
+    }
+    pub fn ljx8_if_get_trigger_and_pulse_count(&mut self) -> Result<(u32, i32), std::io::Error> {
+        let receive_buffer = self.send_single_command(0x4B)?;
+
+        let trigger_count = u32::from_le_bytes(receive_buffer[28..32].try_into().unwrap());
+        let encoder_count = i32::from_le_bytes(receive_buffer[32..36].try_into().unwrap());
+
+        Ok((trigger_count, encoder_count))
+    }
     pub fn ljx8_if_get_head_temperature(&mut self) -> Result<(i16, i16, i16), std::io::Error> {
         let receive_buffer = self.send_single_command(0x4C)?;
         let pn_sensor_temperature = i16::from_le_bytes(receive_buffer[28..30].try_into().unwrap());
@@ -25,6 +79,20 @@ impl LJX8If {
             pn_processor_temperature,
             pn_case_temperature,
         ))
+    }
+    pub fn ljx8_if_get_head_model(&mut self) -> Result<String, std::io::Error> {
+        let receive_buffer = self.send_single_command(0x06)?;
+        let number_of_unit = receive_buffer[28];
+
+        if number_of_unit >= 2 {
+            let head_model = std::str::from_utf8(&receive_buffer[96..128])
+                .unwrap_or("")
+                .trim_end_matches('\0')
+                .to_string();
+            Ok(head_model)
+        } else {
+            Ok(String::new())
+        }
     }
     pub fn ljx8_if_get_serial_number(&mut self) -> Result<(String, String), std::io::Error> {
         let receive_buffer = self.send_single_command(0x06)?;
@@ -46,6 +114,92 @@ impl LJX8If {
         }
 
         Ok((controller_serial, head_serial))
+    }
+    pub fn ljx8_if_get_attention_status(&mut self) -> Result<u16, std::io::Error> {
+        let receive_buffer = self.send_single_command(0x65)?;
+        
+        let attention_status = u16::from_le_bytes(receive_buffer[28..30].try_into().unwrap());
+        
+        Ok(attention_status)
+    }
+    pub fn ljx8_if_trigger(&mut self) -> Result<(), std::io::Error> {
+        self.send_single_command(0x21)?;
+        Ok(())
+    }
+    pub fn ljx8_if_start_measure(&mut self) -> Result<(), std::io::Error> {
+        self.send_single_command(0x22)?;
+        Ok(())
+    }
+    pub fn ljx8_if_stop_measure(&mut self) -> Result<(), std::io::Error> {
+        self.send_single_command(0x23)?;
+        Ok(())
+    }
+    pub fn ljx8_if_clear_memory(&mut self) -> Result<(), std::io::Error> {
+        self.send_single_command(0x27)?;
+        Ok(())
+    }
+    //ToDo: LJX8IF_SetSetting, LJX8IF_GetSetting
+    pub fn ljx8_if_initialize_setting(&mut self, by_depth: u8, by_target: u8) -> Result<(), std::io::Error> {
+        let senddata = [0x3D, 0x00, 0x00, 0x00, by_depth, 0x00, 0x00, 0x00, 0x03, by_target, 0x00, 0x00];
+        self.my_any_command(&senddata)?;
+        Ok(())
+    }
+
+    pub fn ljx8_if_reflect_setting(&mut self, by_depth: u8) -> Result<u32, std::io::Error> {
+        let senddata = [0x33, 0x00, 0x00, 0x00, by_depth, 0x00, 0x00, 0x00];
+        let receive_buffer = self.my_any_command(&senddata)?;
+        let error = u32::from_le_bytes(receive_buffer[28..32].try_into().unwrap());
+        Ok(error)
+    }
+
+    pub fn ljx8_if_rewrite_temporary_setting(&mut self, by_depth: u8) -> Result<(), std::io::Error> {
+        let by_depth = match by_depth {
+            1 | 2 => by_depth - 1,
+            _ => 0xFF,
+        };
+        let senddata = [0x35, 0x00, 0x00, 0x00, by_depth, 0x00, 0x00, 0x00];
+        self.my_any_command(&senddata)?;
+        Ok(())
+    }
+
+    pub fn ljx8_if_check_memory_access(&mut self) -> Result<u8, std::io::Error> {
+        let receive_buffer = self.send_single_command(0x34)?;
+        Ok(receive_buffer[28])
+    }
+
+    pub fn ljx8_if_set_xpitch(&mut self, dw_xpitch: u32) -> Result<(), std::io::Error> {
+        let xpitch_bytes = dw_xpitch.to_le_bytes();
+        let senddata = [0x36, 0x00, 0x00, 0x00, xpitch_bytes[0], xpitch_bytes[1], xpitch_bytes[2], xpitch_bytes[3]];
+        self.my_any_command(&senddata)?;
+        Ok(())
+    }
+
+    pub fn ljx8_if_get_xpitch(&mut self) -> Result<u32, std::io::Error> {
+        let receive_buffer = self.send_single_command(0x37)?;
+        Ok(u32::from_le_bytes(receive_buffer[28..32].try_into().unwrap()))
+    }
+
+    pub fn ljx8_if_set_timer_count(&mut self, dw_timer_count: u32) -> Result<(), std::io::Error> {
+        let timer_count_bytes = dw_timer_count.to_le_bytes();
+        let senddata = [0x4E, 0x00, 0x00, 0x00, timer_count_bytes[0], timer_count_bytes[1], timer_count_bytes[2], timer_count_bytes[3]];
+        self.my_any_command(&senddata)?;
+        Ok(())
+    }
+
+    pub fn ljx8_if_get_timer_count(&mut self) -> Result<u32, std::io::Error> {
+        let receive_buffer = self.send_single_command(0x4F)?;
+        Ok(u32::from_le_bytes(receive_buffer[28..32].try_into().unwrap()))
+    }
+
+    pub fn ljx8_if_change_active_program(&mut self, by_program_no: u8) -> Result<(), std::io::Error> {
+        let senddata = [0x39, 0x00, 0x00, 0x00, by_program_no, 0x00, 0x00, 0x00];
+        self.my_any_command(&senddata)?;
+        Ok(())
+    }
+
+    pub fn ljx8_if_get_active_program(&mut self) -> Result<u8, std::io::Error> {
+        let receive_buffer = self.send_single_command(0x65)?;
+        Ok(receive_buffer[24])
     }
     fn send_single_command(&mut self, code: u8) -> Result<Vec<u8>, std::io::Error> {
         let command = [code, 0x00, 0x00, 0x00];
