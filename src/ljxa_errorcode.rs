@@ -12,3 +12,10 @@ const LJX8IF_RC_ERR_HISPEED_NO_DEVICE: u32 = 0x1009;	// High-speed communication
 const LJX8IF_RC_ERR_HISPEED_OPEN_YET: u32 = 0x100A;	// High-speed communication was initialized.
 const LJX8IF_RC_ERR_HISPEED_RECV_YET: u32 = 0x100B;	// Error already occurred during high-speed communication (for high-speed communication)
 const LJX8IF_RC_ERR_BUFFER_SHORT: u32 = 0x100C;	// The buffer size passed as an argument is insufficient. 
+#[derive(Debug)]
+pub enum LjxError {
+    InvalidDeviceId,
+    SendError,
+    ReceiveError,
+    // 可以根据需要添加更多错误类型
+}

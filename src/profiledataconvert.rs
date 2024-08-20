@@ -30,8 +30,8 @@ pub fn convert_profile_data_20_to_32(
     profile_type: u8,
     w_prof_cnt: u16,
     w_unit: u16,
-    profile_data: &[u8],
-    converted_z_profile: &mut [i32],
+    profile_data: &[u32],
+    converted_z_profile: &mut [u32],
 ) -> u8 {
     if profile_data.is_empty() || converted_z_profile.is_empty() {
         return PP_ERR_ARGUMENT;
@@ -47,12 +47,13 @@ pub fn convert_profile_data_20_to_32(
     let profile_size = w_prof_cnt as usize;
     let profile_unit = w_unit as i32;
 
-    let mut brightness_offset = 0;
+    let mut brightness_offset: u32 = 0;
 
     // 将20位数据转换为32位数据
-    Self::convert_20_to_32(
+    convert_20_to_32(
         profile_size,
         read_profile_data,
+        &mut read_position,
         &mut brightness_offset,
         converted_z_profile,
     );
@@ -85,8 +86,26 @@ pub fn convert_profile_data_20_to_32(
         // 如果配置文件数量不能被8整除（例如300），则先转换余数
         let is_profile_count_300 = profile_size % 8 != 0;
         if is_profile_count_300 {
+            let mut read_position = 0;
+            let mut write_position = 0;
+            
             // 处理剩余的亮度配置文件
-            // ... (这里需要实现处理剩余亮度配置文件的逻辑)
+            read_profile_data = read_profile_data.offset(-1);
+        
+            converted_profile_data[write_position + 0] = ((0xFC000000 & read_profile_data[read_position + 0]) >> 26 | (0x0000000F & read_profile_data[read_position + 1]) << 6) as u32;
+            converted_profile_data[write_position + 1] = ((0x03FF0000 & read_profile_data[read_position + 0]) >> 16) as u32;
+            converted_profile_data[write_position + 2] = ((0x00FFC000 & read_profile_data[read_position + 1]) >> 14) as u32;
+            converted_profile_data[write_position + 3] = ((0x00003FF0 & read_profile_data[read_position + 1]) >> 4) as u32;
+            converted_profile_data[write_position + 4] = ((0x00000FFC & read_profile_data[read_position + 2]) >> 2) as u32;
+            converted_profile_data[write_position + 5] = ((0xFF000000 & read_profile_data[read_position + 1]) >> 24 | (0x00000003 & read_profile_data[read_position + 2]) << 8) as u32;
+            converted_profile_data[write_position + 6] = ((0xFFC00000 & read_profile_data[read_position + 2]) >> 22) as u32;
+            converted_profile_data[write_position + 7] = ((0x003FF000 & read_profile_data[read_position + 2]) >> 12) as u32;
+            
+            read_profile_data = read_profile_data.offset(3);
+        
+            const HALF_PROFILE_DATA: usize = 16 / 2;
+            converted_profile_data = &mut converted_profile_data[HALF_PROFILE_DATA..];
+            profile_size -= HALF_PROFILE_DATA;
         }
 
         let mut read_position = 0;
@@ -122,15 +141,10 @@ pub fn convert_profile_data_32_to_16_as_simple_array(
         let profile_index_base = profile_size as usize * i as usize;
 
         // Header
-        let header_slice = unsafe {
-            slice::from_raw_parts(
-                source.as_ptr() as *const u8,
-                header_byte_size,
-            )
-        };
-        p_profile_header_array[i as usize].copy_from_slice(
-            unsafe { &*(header_slice.as_ptr() as *const LJX8IF_PROFILE_HEADER) }
-        );
+        let header_slice =
+            unsafe { slice::from_raw_parts(source.as_ptr() as *const u8, header_byte_size) };
+        p_profile_header_array[i as usize]
+            .copy_from_slice(unsafe { &*(header_slice.as_ptr() as *const LJX8IF_PROFILE_HEADER) });
         source = &source[header_size..];
 
         // Height data
@@ -148,7 +162,7 @@ pub fn convert_profile_data_32_to_16_as_simple_array(
                 p_height_profile_array[profile_index_base + k] = 0;
                 continue;
             }
-            
+
             // To convert signed 16-bit data to unsigned data, offset the data by 32768
             p_height_profile_array[profile_index_base + k] = (value + i16::MAX as i64 + 1) as u16;
         }
@@ -182,25 +196,39 @@ pub fn convert_profile_data(
     let is_brightness = (BRIGHTNESS_VALUE & by_res_prof_type) > 0;
     let n_multiple_value = if is_brightness { 2 } else { 1 };
     let n_head_count = Self::get_profile_count(by_res_prof_type);
-    
+
     let n_profile_unit_size = w_prof_cnt as usize * n_multiple_value * size_of::<u32>();
     let n_profile_data_size = n_profile_unit_size * n_head_count as usize;
-    
+
     // 由于转换以8为单位执行，数据大小准备为8的倍数（向上取整）
-    let n_profile_buffer_size = ((w_prof_cnt as f64 / PROFILE_CONVERT_UNIT).ceil() * PROFILE_CONVERT_UNIT * n_multiple_value as f64 * size_of::<u32>() as f64 * n_head_count as f64) as usize;
+    let n_profile_buffer_size = ((w_prof_cnt as f64 / PROFILE_CONVERT_UNIT).ceil()
+        * PROFILE_CONVERT_UNIT
+        * n_multiple_value as f64
+        * size_of::<u32>() as f64
+        * n_head_count as f64) as usize;
 
     let n_header_size = size_of::<LJX8IF_PROFILE_HEADER>();
     let n_footer_size = size_of::<LJX8IF_PROFILE_FOOTER>();
 
     // 检查用户缓冲区大小是否足够
-    if p_out_z_prof.len() < (n_profile_data_size + n_header_size + n_footer_size) * data_count as usize {
+    if p_out_z_prof.len()
+        < (n_profile_data_size + n_header_size + n_footer_size) * data_count as usize
+    {
         return Err("LJX8IF_RC_ERR_BUFFER_SHORT");
     }
-    
+
     let n_profile_data_raw_size = if is_brightness {
-        size_of_bytes((w_prof_cnt as usize * PROFILE_BIT_SIZE) + (w_prof_cnt as usize * BRIGHTNESS_BIT_SIZE), PACKING_PROFILE_DATA_SIZE_PER_BYTE) * n_head_count as usize * PACKING_PROFILE_DATA_SIZE_PER_BYTE
+        size_of_bytes(
+            (w_prof_cnt as usize * PROFILE_BIT_SIZE) + (w_prof_cnt as usize * BRIGHTNESS_BIT_SIZE),
+            PACKING_PROFILE_DATA_SIZE_PER_BYTE,
+        ) * n_head_count as usize
+            * PACKING_PROFILE_DATA_SIZE_PER_BYTE
     } else {
-        size_of_bytes((w_prof_cnt as usize * PROFILE_BIT_SIZE), PACKING_PROFILE_DATA_SIZE_PER_BYTE) * n_head_count as usize * PACKING_PROFILE_DATA_SIZE_PER_BYTE
+        size_of_bytes(
+            (w_prof_cnt as usize * PROFILE_BIT_SIZE),
+            PACKING_PROFILE_DATA_SIZE_PER_BYTE,
+        ) * n_head_count as usize
+            * PACKING_PROFILE_DATA_SIZE_PER_BYTE
     };
 
     let mut p_profile_raw_data = p_in_data;
@@ -211,7 +239,14 @@ pub fn convert_profile_data(
         let mut a_profile_data = vec![0u8; n_profile_buffer_size];
 
         // 20位到32位转换
-        if Self::convert_profile_data_20to32(by_res_prof_type, w_prof_cnt, w_unit, p_profile_raw_data, &mut a_profile_data)? != PP_ERR_NONE {
+        if Self::convert_profile_data_20to32(
+            by_res_prof_type,
+            w_prof_cnt,
+            w_unit,
+            p_profile_raw_data,
+            &mut a_profile_data,
+        )? != PP_ERR_NONE
+        {
             return Err("LJX8IF_RC_ERR_PARAMETER");
         }
 
@@ -225,10 +260,14 @@ pub fn convert_profile_data(
 
         // 尾部
         let footer_start = n_header_size + n_profile_data_raw_size;
-        p_out[..n_footer_size].copy_from_slice(&p_profile_raw_data[footer_start..footer_start + n_footer_size]);
+        p_out[..n_footer_size]
+            .copy_from_slice(&p_profile_raw_data[footer_start..footer_start + n_footer_size]);
         p_out = &mut p_out[n_footer_size..];
 
-        p_profile_raw_data = &p_profile_raw_data[n_header_size + n_profile_data_raw_size + n_footer_size + n_profile_data_margin as usize..];
+        p_profile_raw_data = &p_profile_raw_data[n_header_size
+            + n_profile_data_raw_size
+            + n_footer_size
+            + n_profile_data_margin as usize..];
     }
 
     Ok(())
@@ -237,7 +276,7 @@ pub fn convert_profile_data(
 pub fn get_profile_count(by_kind: u8) -> u8 {
     let by_temp = by_kind & (!MASK_PROFILE_COUNT);
     let mut by_profile_cnt = 0;
-    
+
     for i in 0..BIT_PER_BYTE {
         if by_temp & (1 << i) != 0 {
             by_profile_cnt += 1;
