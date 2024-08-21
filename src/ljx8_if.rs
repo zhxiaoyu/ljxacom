@@ -1,9 +1,62 @@
+include!("profiledataconvert.rs");
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 pub struct LJX8If {
     stream: TcpStream,
+}
+pub struct Ljx8ifGetProfileRequest {
+    pub by_target_bank: u8,
+    pub by_position_mode: u8,
+    pub reserve: [u8; 2],
+    pub dw_get_profile_no: u32,
+    pub by_get_profile_count: u8,
+    pub by_erase: u8,
+    pub reserve2: [u8; 2],
+}
+pub struct Ljx8ifGetBatchProfileRequest {
+    pub by_target_bank: u8,
+    pub by_position_mode: u8,
+    pub reserve: [u8; 2],
+    pub dw_get_batch_no: u32,
+    pub dw_get_profile_no: u32,
+    pub by_get_profile_count: u8,
+    pub by_erase: u8,
+    pub reserve2: [u8; 2],
+}
+pub struct Ljx8ifGetProfileResponse {
+    pub dw_current_profile_no: u32,
+    pub dw_oldest_profile_no: u32,
+    pub dw_get_top_profile_no: u32,
+    pub by_get_profile_count: u8,
+    pub reserve: [u8; 3],
+}
+pub struct Ljx8ifGetBatchProfileResponse {
+    pub dw_current_batch_no: u32,
+    pub dw_current_batch_profile_count: u32,
+    pub dw_oldest_batch_no: u32,
+    pub dw_oldest_batch_profile_count: u32,
+    pub dw_get_batch_no: u32,
+    pub dw_get_batch_profile_count: u32,
+    pub dw_get_batch_top_profile_no: u32,
+    pub by_get_profile_count: u8,
+    pub by_current_batch_commited: u8,
+    pub reserve: [u8; 2],
+}
+pub struct Ljx8ifHighSpeedPreStartReq {
+    pub by_send_position: u8,
+    pub reserve: [u8; 3],
+}
+pub struct Ljx8ifProfileInfo {
+    pub by_profile_count: u8,
+    pub reserve1: u8,
+    pub by_luminance_output: u8,
+    pub reserve2: u8,
+    pub w_profile_data_count: u16,
+    pub reserve3: [u8; 2],
+    pub l_xstart: i32,
+    pub l_xpitch: i32,
 }
 impl LJX8If {
     pub fn ljx8_if_ethernet_open(ip: &str, port: u16) -> Result<Self, std::io::Error> {
@@ -117,9 +170,9 @@ impl LJX8If {
     }
     pub fn ljx8_if_get_attention_status(&mut self) -> Result<u16, std::io::Error> {
         let receive_buffer = self.send_single_command(0x65)?;
-        
+
         let attention_status = u16::from_le_bytes(receive_buffer[28..30].try_into().unwrap());
-        
+
         Ok(attention_status)
     }
     pub fn ljx8_if_trigger(&mut self) -> Result<(), std::io::Error> {
@@ -139,8 +192,14 @@ impl LJX8If {
         Ok(())
     }
     //ToDo: LJX8IF_SetSetting, LJX8IF_GetSetting
-    pub fn ljx8_if_initialize_setting(&mut self, by_depth: u8, by_target: u8) -> Result<(), std::io::Error> {
-        let senddata = [0x3D, 0x00, 0x00, 0x00, by_depth, 0x00, 0x00, 0x00, 0x03, by_target, 0x00, 0x00];
+    pub fn ljx8_if_initialize_setting(
+        &mut self,
+        by_depth: u8,
+        by_target: u8,
+    ) -> Result<(), std::io::Error> {
+        let senddata = [
+            0x3D, 0x00, 0x00, 0x00, by_depth, 0x00, 0x00, 0x00, 0x03, by_target, 0x00, 0x00,
+        ];
         self.my_any_command(&senddata)?;
         Ok(())
     }
@@ -152,7 +211,10 @@ impl LJX8If {
         Ok(error)
     }
 
-    pub fn ljx8_if_rewrite_temporary_setting(&mut self, by_depth: u8) -> Result<(), std::io::Error> {
+    pub fn ljx8_if_rewrite_temporary_setting(
+        &mut self,
+        by_depth: u8,
+    ) -> Result<(), std::io::Error> {
         let by_depth = match by_depth {
             1 | 2 => by_depth - 1,
             _ => 0xFF,
@@ -169,29 +231,54 @@ impl LJX8If {
 
     pub fn ljx8_if_set_xpitch(&mut self, dw_xpitch: u32) -> Result<(), std::io::Error> {
         let xpitch_bytes = dw_xpitch.to_le_bytes();
-        let senddata = [0x36, 0x00, 0x00, 0x00, xpitch_bytes[0], xpitch_bytes[1], xpitch_bytes[2], xpitch_bytes[3]];
+        let senddata = [
+            0x36,
+            0x00,
+            0x00,
+            0x00,
+            xpitch_bytes[0],
+            xpitch_bytes[1],
+            xpitch_bytes[2],
+            xpitch_bytes[3],
+        ];
         self.my_any_command(&senddata)?;
         Ok(())
     }
 
     pub fn ljx8_if_get_xpitch(&mut self) -> Result<u32, std::io::Error> {
         let receive_buffer = self.send_single_command(0x37)?;
-        Ok(u32::from_le_bytes(receive_buffer[28..32].try_into().unwrap()))
+        Ok(u32::from_le_bytes(
+            receive_buffer[28..32].try_into().unwrap(),
+        ))
     }
 
     pub fn ljx8_if_set_timer_count(&mut self, dw_timer_count: u32) -> Result<(), std::io::Error> {
         let timer_count_bytes = dw_timer_count.to_le_bytes();
-        let senddata = [0x4E, 0x00, 0x00, 0x00, timer_count_bytes[0], timer_count_bytes[1], timer_count_bytes[2], timer_count_bytes[3]];
+        let senddata = [
+            0x4E,
+            0x00,
+            0x00,
+            0x00,
+            timer_count_bytes[0],
+            timer_count_bytes[1],
+            timer_count_bytes[2],
+            timer_count_bytes[3],
+        ];
         self.my_any_command(&senddata)?;
         Ok(())
     }
 
     pub fn ljx8_if_get_timer_count(&mut self) -> Result<u32, std::io::Error> {
         let receive_buffer = self.send_single_command(0x4F)?;
-        Ok(u32::from_le_bytes(receive_buffer[28..32].try_into().unwrap()))
+        Ok(u32::from_le_bytes(
+            receive_buffer[28..32].try_into().unwrap(),
+        ))
     }
 
-    pub fn ljx8_if_change_active_program(&mut self, by_program_no: u8) -> Result<(), std::io::Error> {
+    pub fn ljx8_if_change_active_program(
+        &mut self,
+        by_program_no: u8,
+    ) -> Result<(), std::io::Error> {
         let senddata = [0x39, 0x00, 0x00, 0x00, by_program_no, 0x00, 0x00, 0x00];
         self.my_any_command(&senddata)?;
         Ok(())
@@ -200,6 +287,69 @@ impl LJX8If {
     pub fn ljx8_if_get_active_program(&mut self) -> Result<u8, std::io::Error> {
         let receive_buffer = self.send_single_command(0x65)?;
         Ok(receive_buffer[24])
+    }
+    pub fn ljx8_if_get_profile(
+        &mut self,
+        p_req: Ljx8ifGetProfileRequest,
+    ) -> Result<(Ljx8ifGetProfileResponse, Ljx8ifProfileInfo, Vec<u32>), std::io::Error> {
+        let aby_dat = p_req.dw_get_profile_no.to_le_bytes();
+        let senddata = [
+            0x42,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            p_req.by_target_bank,
+            p_req.by_position_mode,
+            0x00,
+            0x00,
+            aby_dat[0],
+            aby_dat[1],
+            aby_dat[2],
+            aby_dat[3],
+            p_req.by_get_profile_count,
+            p_req.by_erase,
+            0x00,
+            0x00,
+        ];
+        let receive_buffer = self.my_any_command(&senddata)?;
+        let p_rsp = Ljx8ifGetProfileResponse {
+            dw_current_profile_no: u32::from_le_bytes(receive_buffer[28..32].try_into().unwrap()),
+            dw_oldest_profile_no: u32::from_le_bytes(receive_buffer[32..36].try_into().unwrap()),
+            dw_get_top_profile_no: u32::from_le_bytes(receive_buffer[36..40].try_into().unwrap()),
+            by_get_profile_count: receive_buffer[40],
+            reserve: [0; 3],
+        };
+        let kind = receive_buffer[48];
+        let profile_unit = u16::from_le_bytes(receive_buffer[54..56].try_into().unwrap());
+        let p_profile_info = Ljx8ifProfileInfo {
+            by_profile_count: get_profile_count(kind),
+            reserve1: 0,
+            by_luminance_output: match BRIGHTNESS_VALUE & kind > 0 {
+                true => 1,
+                false => 0,
+            },
+            reserve2: 0,
+            w_profile_data_count: u16::from_le_bytes(receive_buffer[52..54].try_into().unwrap()),
+            reserve3: [0; 2],
+            l_xstart: i32::from_le_bytes(receive_buffer[56..60].try_into().unwrap()),
+            l_xpitch: i32::from_le_bytes(receive_buffer[60..64].try_into().unwrap()),
+        };
+        let before_conv_data = &receive_buffer[64..];
+        println!("before_conv_data length: {:?}", before_conv_data.len());
+        let p_dw_profile_data = convert_profile_data(
+            p_rsp.by_get_profile_count,
+            kind,
+            0,
+            p_profile_info.w_profile_data_count,
+            profile_unit,
+            before_conv_data,
+        );
+        println!("p_dw_profile_data length: {:?}", p_dw_profile_data.len());
+        Ok((p_rsp, p_profile_info, p_dw_profile_data))
     }
     fn send_single_command(&mut self, code: u8) -> Result<Vec<u8>, std::io::Error> {
         let command = [code, 0x00, 0x00, 0x00];
@@ -238,7 +388,7 @@ impl LJX8If {
         let mut receive_buffer = vec![0u8; target_length as usize];
         let _ = self.stream.read_exact(&mut receive_buffer)?;
 
-        println!("receive_buffer: {:02X?}", receive_buffer);
+        //println!("receive_buffer: {:02X?}", receive_buffer);
         println!("target_length: {:?}", target_length);
         Ok(receive_buffer)
     }
