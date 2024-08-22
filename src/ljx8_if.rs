@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 const MASK_CURRENT_BATCH_COMMITED: u32 = 0x80000000;
 pub struct LJX8If {
     stream: TcpStream,
+    startcode: i32,
 }
 pub struct Ljx8ifGetProfileRequest {
     pub by_target_bank: u8,
@@ -62,7 +63,10 @@ pub struct Ljx8ifProfileInfo {
 impl LJX8If {
     pub fn ljx8_if_ethernet_open(ip: &str, port: u16) -> Result<Self, std::io::Error> {
         let stream = TcpStream::connect((ip, port))?;
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            startcode: 0,
+        })
     }
     pub fn ljx8_if_communication_close(&mut self) -> Result<(), std::io::Error> {
         self.stream.shutdown(std::net::Shutdown::Both)?;
@@ -552,6 +556,40 @@ impl LJX8If {
             p_height_profile_array,
             p_luminance_profile_array,
         ))
+    }
+    pub fn ljx8_if_pre_start_high_speed_data_communication(
+        &mut self,
+        p_req: Ljx8ifHighSpeedPreStartReq,
+    ) -> Result<Ljx8ifProfileInfo, std::io::Error> {
+        let senddata = [
+            0x47,
+            0x00,
+            0x00,
+            0x00,
+            (p_req.by_send_position),
+            0x00,
+            0x00,
+            0x00,
+        ];
+        let receive_buffer = self.my_any_command(&senddata)?;
+        self.startcode = i32::from_le_bytes(receive_buffer[32..36].try_into().unwrap());
+        let profile_kind = receive_buffer[40];
+        let profile_unit= u16::from_le_bytes(receive_buffer[46..48].try_into().unwrap());
+        let p_profile_info=Ljx8ifProfileInfo{
+            by_profile_count: 1,
+            w_profile_data_count: u16::from_le_bytes(receive_buffer[44..46].try_into().unwrap()),
+            reserve1: 0,
+            by_luminance_output: match BRIGHTNESS_VALUE & profile_kind > 0 {
+                true => 1,
+                false => 0,
+            },
+            reserve2: 0,
+            reserve3: [0; 2],
+            l_xstart: i32::from_le_bytes(receive_buffer[48..52].try_into().unwrap()),
+            l_xpitch: i32::from_le_bytes(receive_buffer[52..56].try_into().unwrap()),
+        };
+        //ToDo: SetThreadParamFast
+        Ok(p_profile_info)
     }
     fn send_single_command(&mut self, code: u8) -> Result<Vec<u8>, std::io::Error> {
         let command = [code, 0x00, 0x00, 0x00];
