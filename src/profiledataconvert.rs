@@ -27,11 +27,22 @@ pub const BRIGHTNESS_BIT_SIZE: i32 = 10;
 pub const PACKING_PROFILE_DATA_SIZE_PER_BYTE: i32 = 4;
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct Ljx8ifProfileHeader {
     reserve: u32,          // Reserved
     dw_trigger_count: u32, // The trigger count when the trigger was issued.
     l_encoder_count: i32,  // The encoder count when the trigger was issued.
     reserve2: [u32; 3],    // Reserved
+}
+impl Default for Ljx8ifProfileHeader {
+    fn default() -> Self {
+        Self {
+            reserve: 0,
+            dw_trigger_count: 0,
+            l_encoder_count: 0,
+            reserve2: [0; 3],
+        }
+    }
 }
 #[repr(C)]
 pub struct Ljx8ifProfileFooter {
@@ -118,9 +129,64 @@ pub fn convert_profile_data(
             + n_footer_size
             + n_profile_data_margin as usize;
     }
-    p_out.chunks_exact(4)
+    p_out
+        .chunks_exact(4)
         .map(|chunk| u32::from_ne_bytes(chunk.try_into().unwrap()))
         .collect::<Vec<u32>>()
+}
+pub fn convert_profile_data32to16_as_simple_array(
+    p_dw_batch_data: Vec<u32>,
+    profile_size: u16,
+    with_luminance: bool,
+    get_profile_count: u32,
+    z_unit: u16,
+) -> (Vec<Ljx8ifProfileHeader>, Vec<u16>, Vec<u16>) {
+    let coefficient = z_unit * 8;
+    let header_size = std::mem::size_of::<Ljx8ifProfileHeader>() / std::mem::size_of::<i32>();
+    let footer_size = std::mem::size_of::<Ljx8ifProfileFooter>() / std::mem::size_of::<i32>();
+
+    let header_byte_size = std::mem::size_of::<Ljx8ifProfileHeader>();
+    let mut p_dw_batch_data_cursor = 0;
+    let mut p_profile_header_array =
+        vec![Ljx8ifProfileHeader::default(); get_profile_count as usize];
+    let mut p_height_profile_array = vec![0u16; profile_size as usize * get_profile_count as usize];
+    let mut p_luminance_profile_array =
+        vec![0u16; profile_size as usize * get_profile_count as usize];
+    for i in 0..get_profile_count as usize {
+        let profile_index_base = profile_size as usize * i;
+        p_profile_header_array[i] = unsafe {
+            std::ptr::read(
+                p_dw_batch_data.as_ptr().add(p_dw_batch_data_cursor) as *const Ljx8ifProfileHeader
+            )
+        };
+        p_dw_batch_data_cursor += header_size;
+        for k in 0..profile_size as usize {
+            let data = p_dw_batch_data[p_dw_batch_data_cursor + k] as i64;
+            if data < DEF_PROF_VALIDDATA_MIN as i64 {
+                p_height_profile_array[profile_index_base + k] = 0;
+                continue;
+            }
+            let value = data / coefficient as i64;
+            if value < i16::MIN as i64 || value > i16::MAX as i64 {
+                p_height_profile_array[profile_index_base + k] = 0;
+                continue;
+            }
+            p_height_profile_array[profile_index_base + k] = (value + i16::MAX as i64 + 1) as u16;
+        }
+        p_dw_batch_data_cursor += profile_size as usize;
+        if with_luminance {
+            for k in 0..profile_size as usize {
+                p_luminance_profile_array[profile_index_base + k] =
+                    p_dw_batch_data[p_dw_batch_data_cursor + k] as u16;
+            }
+            p_dw_batch_data_cursor += profile_size as usize;
+        }
+    }
+    (
+        p_profile_header_array,
+        p_height_profile_array,
+        p_luminance_profile_array,
+    )
 }
 pub fn get_profile_count(by_kind: u8) -> u8 {
     let by_temp = by_kind & (!MASK_PROFILE_COUNT);

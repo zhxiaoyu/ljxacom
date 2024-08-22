@@ -431,7 +431,7 @@ impl LJX8If {
             l_xpitch: i32::from_le_bytes(receive_buffer[60 + 16..64 + 16].try_into().unwrap()),
         };
         let before_conv_data = &receive_buffer[64 + 16..];
-        let p_dw_profile_data = convert_profile_data(
+        let p_dw_batch_data = convert_profile_data(
             p_rsp.by_get_profile_count,
             kind,
             0,
@@ -439,7 +439,119 @@ impl LJX8If {
             profile_unit,
             before_conv_data,
         );
-        Ok((p_rsp, p_profile_info, p_dw_profile_data))
+        Ok((p_rsp, p_profile_info, p_dw_batch_data))
+    }
+    pub fn ljx8_if_get_batch_simple_array(
+        &mut self,
+        p_req: Ljx8ifGetBatchProfileRequest,
+    ) -> Result<
+        (
+            Ljx8ifGetBatchProfileResponse,
+            Ljx8ifProfileInfo,
+            Vec<Ljx8ifProfileHeader>,
+            Vec<u16>,
+            Vec<u16>,
+        ),
+        std::io::Error,
+    > {
+        let aby_batch_no = p_req.dw_get_batch_no.to_le_bytes();
+        let aby_prof_no = p_req.dw_get_profile_no.to_le_bytes();
+        let senddata = [
+            0x43,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            p_req.by_target_bank,
+            p_req.by_position_mode,
+            0x00,
+            0x00,
+            aby_batch_no[0],
+            aby_batch_no[1],
+            aby_batch_no[2],
+            aby_batch_no[3],
+            aby_prof_no[0],
+            aby_prof_no[1],
+            aby_prof_no[2],
+            aby_prof_no[3],
+            p_req.by_get_profile_count,
+            p_req.by_erase,
+            0x00,
+            0x00,
+        ];
+        let receive_buffer = self.my_any_command(&senddata)?;
+        println!("receive_buffer.size: {:?}", receive_buffer.len());
+        let p_rsp = Ljx8ifGetBatchProfileResponse {
+            dw_current_batch_no: u32::from_le_bytes(receive_buffer[28..32].try_into().unwrap()),
+            dw_current_batch_profile_count: u32::from_le_bytes(
+                receive_buffer[32..36].try_into().unwrap(),
+            ) & !MASK_CURRENT_BATCH_COMMITED,
+            dw_oldest_batch_no: u32::from_le_bytes(receive_buffer[36..40].try_into().unwrap()),
+            dw_oldest_batch_profile_count: u32::from_le_bytes(
+                receive_buffer[40..44].try_into().unwrap(),
+            ),
+            dw_get_batch_no: u32::from_le_bytes(receive_buffer[44..48].try_into().unwrap()),
+            dw_get_batch_profile_count: u32::from_le_bytes(
+                receive_buffer[48..52].try_into().unwrap(),
+            ),
+            dw_get_batch_top_profile_no: u32::from_le_bytes(
+                receive_buffer[52..56].try_into().unwrap(),
+            ),
+            by_get_profile_count: receive_buffer[56],
+            by_current_batch_commited: match u32::from_le_bytes(
+                receive_buffer[32..36].try_into().unwrap(),
+            ) & MASK_CURRENT_BATCH_COMMITED
+                > 0
+            {
+                true => 1,
+                false => 0,
+            },
+            reserve: [0; 2],
+        };
+        let kind = receive_buffer[48 + 16];
+        let profile_unit = u16::from_le_bytes(receive_buffer[54 + 16..56 + 16].try_into().unwrap());
+        let p_profile_info = Ljx8ifProfileInfo {
+            by_profile_count: get_profile_count(kind),
+            reserve1: 0,
+            by_luminance_output: match BRIGHTNESS_VALUE & kind > 0 {
+                true => 1,
+                false => 0,
+            },
+            reserve2: 0,
+            w_profile_data_count: u16::from_le_bytes(
+                receive_buffer[52 + 16..54 + 16].try_into().unwrap(),
+            ),
+            reserve3: [0; 2],
+            l_xstart: i32::from_le_bytes(receive_buffer[56 + 16..60 + 16].try_into().unwrap()),
+            l_xpitch: i32::from_le_bytes(receive_buffer[60 + 16..64 + 16].try_into().unwrap()),
+        };
+        let before_conv_data = &receive_buffer[64 + 16..];
+        let p_dw_batch_data = convert_profile_data(
+            p_rsp.by_get_profile_count,
+            kind,
+            0,
+            p_profile_info.w_profile_data_count,
+            profile_unit,
+            before_conv_data,
+        );
+        let (p_profile_header_array, p_height_profile_array, p_luminance_profile_array) =
+            convert_profile_data32to16_as_simple_array(
+                p_dw_batch_data,
+                p_profile_info.w_profile_data_count,
+                p_profile_info.by_luminance_output == 1,
+                p_rsp.by_get_profile_count as u32,
+                profile_unit,
+            );
+        Ok((
+            p_rsp,
+            p_profile_info,
+            p_profile_header_array,
+            p_height_profile_array,
+            p_luminance_profile_array,
+        ))
     }
     fn send_single_command(&mut self, code: u8) -> Result<Vec<u8>, std::io::Error> {
         let command = [code, 0x00, 0x00, 0x00];
