@@ -59,6 +59,7 @@ pub fn convert_profile_data(
         * n_multiple_value as f64
         * 4.0
         * n_head_count as f64) as i32;
+    println!("n_profile_buffer_size: {:?}", n_profile_buffer_size);
     let n_header_size = std::mem::size_of::<Ljx8ifProfileHeader>();
     let n_footer_size = std::mem::size_of::<Ljx8ifProfileFooter>();
     let n_profile_data_raw_size = match is_brightness {
@@ -79,10 +80,12 @@ pub fn convert_profile_data(
     };
     let p_out_size =
         (n_header_size + n_profile_data_size as usize + n_footer_size) * data_count as usize;
+    println!("p_out_size: {:?}", p_out_size);
     let mut p_out: Vec<u8> = vec![0; p_out_size];
     let mut raw_data_cursor = 0;
     let mut p_out_cursor = 0;
     for _i in 0..data_count {
+        println!("i: {:?}", _i);
         let p_profile_raw_data = &p_in_data[raw_data_cursor..];
         println!("p_profile_raw_data length: {:?}", p_profile_raw_data.len());
         let a_profile_data =
@@ -111,7 +114,7 @@ pub fn convert_profile_data(
         p_out_cursor += n_footer_size;
 
         raw_data_cursor += n_header_size
-            + n_profile_data_size as usize
+            + n_profile_data_raw_size as usize
             + n_footer_size
             + n_profile_data_margin as usize;
     }
