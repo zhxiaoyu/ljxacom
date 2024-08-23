@@ -574,8 +574,8 @@ impl LJX8If {
         let receive_buffer = self.my_any_command(&senddata)?;
         self.startcode = i32::from_le_bytes(receive_buffer[32..36].try_into().unwrap());
         let profile_kind = receive_buffer[40];
-        let profile_unit= u16::from_le_bytes(receive_buffer[46..48].try_into().unwrap());
-        let p_profile_info=Ljx8ifProfileInfo{
+        let profile_unit = u16::from_le_bytes(receive_buffer[46..48].try_into().unwrap());
+        let p_profile_info = Ljx8ifProfileInfo {
             by_profile_count: 1,
             w_profile_data_count: u16::from_le_bytes(receive_buffer[44..46].try_into().unwrap()),
             reserve1: 0,
@@ -590,6 +590,20 @@ impl LJX8If {
         };
         //ToDo: SetThreadParamFast
         Ok(p_profile_info)
+    }
+    pub fn ljx8_if_start_high_speed_data_communication(&mut self) -> Result<(), std::io::Error> {
+        let aby_dat: [u8; 4] = self.startcode.to_le_bytes();
+        let senddata = [
+            0xA0, 0x00, 0x00, 0x00, 0x47, 0x00, 0x00, 0x00, aby_dat[0], aby_dat[1], aby_dat[2],
+            aby_dat[3],
+        ];
+        self.my_any_command(&senddata)?;
+        Ok(())
+    }
+
+    pub fn ljx8_if_stop_high_speed_data_communication(&mut self) -> Result<(), std::io::Error> {
+        self.send_single_command(0x48)?;
+        Ok(())
     }
     fn send_single_command(&mut self, code: u8) -> Result<Vec<u8>, std::io::Error> {
         let command = [code, 0x00, 0x00, 0x00];
