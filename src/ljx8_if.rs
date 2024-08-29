@@ -1,9 +1,17 @@
 include!("profiledataconvert.rs");
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::ptr::null_mut;
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
+static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 const MASK_CURRENT_BATCH_COMMITED: u32 = 0x80000000;
+const FAST_RECEIVE_BUF_SIZE: u32 = 64 * 1024;
+const PROF_HEADER_LEN: u32 = 6 * 4;
+const PROF_CHECKSUM_LEN: u32 = 4;
+const PROF_NOT_DATA_LEN: u32 = PROF_HEADER_LEN + PROF_CHECKSUM_LEN;
+const PARITY_ERROR: u32 = 0x40000000;
 pub struct LJX8If {
     stream: TcpStream,
     startcode: i32,
@@ -59,6 +67,136 @@ pub struct Ljx8ifProfileInfo {
     pub reserve3: [u8; 2],
     pub l_xstart: i32,
     pub l_xpitch: i32,
+}
+#[repr(C)]
+pub struct StCindProfileNotify {
+    pub dw_magic_no: u32,
+    pub dw_notify: u32,
+}
+pub struct ThreadParamFast {
+    pub receive_buffer: Vec<u8>, // Buffer for passing data to the user finally in the callback function.
+    pub pby_temp_buffer: Vec<u8>, // Buffer to store newly received raw data buffer.
+    pub pby_conv_buffer: Vec<u8>, // Buffer to store 20bit profile (before conversion).
+    pub pby_conv_end_buffer: Vec<u8>, // Buffer to store 32bit profile (after conversion).
+    pub dw_conv_buffer_index: u32, // How many data remains in the pbyConvBuffer, in bytes.
+    pub b_is_enabled: bool,      // Indicate that the thread is active.
+    pub dw_profile_max: u32, // When this number of profiles acquired, it wake up the callback function.
+    pub dw_profile_loop_cnt: u32, // Number of profiles collected so far.
+    pub dw_profile_cnt: u32, // Number of data points for each profile.
+    pub dw_profile_size: u32, // Size of each profile, in bytes. (20bit profile)
+    pub dw_profile_size32: u32, // Size of each profile, in bytes. (32bit profile)
+    pub w_unit: u16,         // Unit of profile (in 0.01um)
+    pub by_kind: u8,         // Kind of profile (e.g. luminance output is enabled)
+    //extended
+    pub n_buffer_size: u32,          // Size of ReceiveBuffer, in bytes.
+    pub simple_array_z_unit_um: f32, // Z unit of 16bit height image(in um)
+}
+static THREAD_PARAM: AtomicPtr<ThreadParamFast> = AtomicPtr::new(null_mut());
+fn div_round_up(x: u32, y: u32) -> u32 {
+    (x + y - 1) / y
+}
+fn receive_data_check(
+    conv_before: &[u8],
+    dw_recv_size: u32,
+    dw_prof_size: u32,
+    by_kind: u8,
+    dw_prof_cnt: u32,
+    w_unit: u16,
+    conv_after_data: &mut [u8],
+    p_dw_conv_size: &mut u32,
+    p_dw_notify: &mut u32,
+    dw_num_received: u32,
+    temp_buffer: &mut [u8],
+) -> u32 {
+    let mut pst_notify: &StCindProfileNotify =
+        unsafe { &*(conv_before.as_ptr() as *const StCindProfileNotify) };
+    let mut dw_used_size = 0;
+    let mut dw_notify = 0;
+    let mut dw_conv_size = 0;
+    loop {
+        if dw_recv_size >= std::mem::size_of::<StCindProfileNotify>() as u32 {
+            if pst_notify.dw_magic_no == DEF_NOTIFY_MAGIC_NO {
+                dw_notify = pst_notify.dw_notify;
+                dw_used_size = std::mem::size_of::<StCindProfileNotify>() as u32;
+                break;
+            }
+        }
+        if dw_recv_size >= dw_prof_size {
+            let mut b_is_recv_prof_err = false;
+            dw_conv_size = conv_prof_data_20_to_32(
+                conv_before,
+                by_kind,
+                dw_prof_cnt,
+                w_unit,
+                conv_after_data,
+                &mut b_is_recv_prof_err,
+                dw_prof_size,
+            );
+            if b_is_recv_prof_err {
+                dw_notify |= PARITY_ERROR;
+            }
+            dw_used_size = dw_prof_size;
+            break;
+        }
+        if dw_num_received == std::mem::size_of::<StCindProfileNotify>() as u32 && dw_recv_size > 0
+        {
+            pst_notify = unsafe { &*(temp_buffer.as_ptr() as *const StCindProfileNotify) };
+            if pst_notify.dw_magic_no == DEF_NOTIFY_MAGIC_NO
+                && (pst_notify.dw_notify & 0x0000ffff) != 0
+            {
+                dw_notify = pst_notify.dw_notify;
+                dw_used_size = std::mem::size_of::<StCindProfileNotify>() as u32;
+                break;
+            }
+        }
+        break;
+    }
+    *p_dw_notify = dw_notify;
+    *p_dw_conv_size = dw_conv_size;
+    dw_used_size
+}
+fn conv_prof_data_20_to_32(
+    conv_before_data: &[u8],
+    by_kind: u8,
+    dw_prof_cnt: u32,
+    w_unit: u16,
+    conv_after_data: &mut [u8],
+    b_is_recv_prof_err: &mut bool,
+    dw_prof_size: u32,
+) -> u32 {
+    conv_after_data[..4 * PROF_HEADER_LEN as usize]
+        .copy_from_slice(&conv_before_data[..4 * PROF_HEADER_LEN as usize]);
+    let zprof =
+        convert_profile_data_20_to_32(by_kind, dw_prof_cnt as u16, w_unit, conv_before_data);
+    let zprof_bytes = unsafe {
+        std::slice::from_raw_parts(
+            zprof.as_ptr() as *const u8,
+            zprof.len() * std::mem::size_of::<i32>(),
+        )
+    };
+    conv_after_data[PROF_HEADER_LEN as usize..].copy_from_slice(zprof_bytes);
+    let mut dw_calc_parity = 0;
+    let tmp_recv_data: &[u32] = unsafe {
+        std::slice::from_raw_parts(
+            conv_before_data.as_ptr() as *const u32,
+            conv_before_data.len() / 4,
+        )
+    };
+    let dw_one_prof_data_cnt =
+        (dw_prof_size - PROF_CHECKSUM_LEN) / std::mem::size_of::<u32>() as u32;
+    for i in 0..dw_one_prof_data_cnt {
+        dw_calc_parity += tmp_recv_data[i as usize];
+    }
+    *b_is_recv_prof_err = tmp_recv_data[dw_one_prof_data_cnt as usize] != dw_calc_parity;
+    let multiple_value = if by_kind & BRIGHTNESS_VALUE == BRIGHTNESS_VALUE {
+        2
+    } else {
+        1
+    };
+    let dw_conv_size = (dw_prof_cnt * multiple_value as u32 * std::mem::size_of::<u32>() as u32)
+        + PROF_HEADER_LEN as u32
+        + PROF_CHECKSUM_LEN as u32;
+    dw_conv_size
 }
 impl LJX8If {
     pub fn ljx8_if_ethernet_open(ip: &str, port: u16) -> Result<Self, std::io::Error> {
@@ -588,7 +726,11 @@ impl LJX8If {
             l_xstart: i32::from_le_bytes(receive_buffer[48..52].try_into().unwrap()),
             l_xpitch: i32::from_le_bytes(receive_buffer[52..56].try_into().unwrap()),
         };
-        //ToDo: SetThreadParamFast
+        self.set_thread_param_fast(
+            p_profile_info.w_profile_data_count as u32,
+            profile_kind,
+            profile_unit,
+        );
         Ok(p_profile_info)
     }
     pub fn ljx8_if_start_high_speed_data_communication(&mut self) -> Result<(), std::io::Error> {
@@ -603,6 +745,113 @@ impl LJX8If {
 
     pub fn ljx8_if_stop_high_speed_data_communication(&mut self) -> Result<(), std::io::Error> {
         self.send_single_command(0x48)?;
+        Ok(())
+    }
+    pub fn ljx8_if_initialize_high_speed_data_communication<F>(
+        &mut self,
+        ip: &str,
+        w_high_speed_port_no: u16,
+        p_call_back: F,
+        dw_profile_count: u32,
+    ) -> Result<(), std::io::Error>
+    where
+        F: Fn(&mut [u8], u32, u32, u32),
+    {
+        self.init_thread_param_fast(dw_profile_count);
+        let ip = ip.to_string();
+        std::thread::spawn(move || -> Result<(), std::io::Error> {
+            let mut stream_highspeed = TcpStream::connect((ip, w_high_speed_port_no))?;
+            let mut m_n_num_data = 0;
+            let mut m_n_write_index =0;
+            loop {
+                if STOP_FLAG.load(Ordering::Relaxed) {
+                    break;
+                }
+                let thread_param = unsafe { &mut *THREAD_PARAM.load(Ordering::SeqCst) };
+                match stream_highspeed.read(&mut thread_param.pby_temp_buffer) {
+                    Ok(0) => continue,
+                    Ok(dw_num_received) => {
+                        thread_param.pby_conv_buffer[thread_param.dw_conv_buffer_index as usize
+                            ..thread_param.dw_conv_buffer_index as usize + dw_num_received]
+                            .copy_from_slice(&thread_param.pby_temp_buffer[..dw_num_received]);
+                        thread_param.dw_conv_buffer_index += dw_num_received as u32;
+                        let mut conv_before = &mut thread_param.pby_conv_buffer[..];
+                        let mut dw_notify = 0;
+                        let mut rc = true;
+                        loop {
+                            loop {
+                                let mut dw_conv_size = 0;
+                                let dw_num_used = receive_data_check(
+                                    conv_before,
+                                    thread_param.dw_conv_buffer_index as u32,
+                                    thread_param.dw_profile_size,
+                                    thread_param.by_kind,
+                                    thread_param.dw_profile_cnt,
+                                    thread_param.w_unit,
+                                    &mut thread_param.pby_conv_end_buffer,
+                                    &mut dw_conv_size,
+                                    &mut dw_notify,
+                                    dw_num_received as u32,
+                                    &mut thread_param.pby_temp_buffer,
+                                );
+                                if dw_num_used == 0 {
+                                    break;
+                                }
+                                if (dw_notify & !PARITY_ERROR) != 0 {
+                                    thread_param.dw_conv_buffer_index -= dw_num_used as u32;
+                                    conv_before = &mut conv_before[dw_num_used as usize..];
+                                    break;
+                                }
+                                else {
+                                    if thread_param.dw_profile_loop_cnt >= thread_param.dw_profile_max {
+                                        break;
+                                    }
+                                    let mut n_size_of_data = dw_conv_size;
+                                    let p_buffer = &mut thread_param.receive_buffer[..];
+                                    let mut p_copy_data = &thread_param.pby_conv_end_buffer[..];
+                                    if m_n_num_data + n_size_of_data <= thread_param.n_buffer_size {
+                                        if m_n_write_index + n_size_of_data > thread_param.n_buffer_size {
+                                            p_buffer[m_n_write_index as usize ..thread_param.n_buffer_size as usize].copy_from_slice(p_copy_data);
+                                            p_copy_data = &p_copy_data[(thread_param.n_buffer_size - m_n_write_index) as usize..];
+                                            n_size_of_data -= (thread_param.n_buffer_size - m_n_write_index) as u32;
+                                            m_n_num_data += (thread_param.n_buffer_size - m_n_write_index) as u32;
+                                            m_n_write_index = 0;
+                                        }
+                                        if n_size_of_data > 0 {
+                                            p_buffer[m_n_write_index as usize ..m_n_write_index as usize + n_size_of_data as usize].copy_from_slice(p_copy_data);
+                                            m_n_write_index = (m_n_write_index + n_size_of_data) % thread_param.n_buffer_size;
+                                            m_n_num_data += n_size_of_data;
+                                        }
+                                        rc = true;
+                                    }
+                                    else {
+                                        rc = false;
+                                        break;
+                                    }
+                                    thread_param.dw_conv_buffer_index -= dw_num_used as u32;
+                                    conv_before = &mut conv_before[dw_num_used as usize..];
+                                    thread_param.dw_profile_loop_cnt += 1;
+                                }
+                            }
+                        }
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        // 暂时没有更多数据可读，等待一小段时间后继续
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(())
+        });
+        Ok(())
+    }
+    pub fn ljx8_if_finalize_high_speed_data_communications(
+        &mut self,
+    ) -> Result<(), std::io::Error> {
+        self.ljx8_if_stop_high_speed_data_communication()?;
+        STOP_FLAG.store(true, Ordering::Relaxed);
         Ok(())
     }
     fn send_single_command(&mut self, code: u8) -> Result<Vec<u8>, std::io::Error> {
@@ -645,5 +894,53 @@ impl LJX8If {
         //println!("receive_buffer: {:02X?}", receive_buffer);
         println!("target_length: {:?}", target_length);
         Ok(receive_buffer)
+    }
+    fn init_thread_param_fast(&mut self, dw_cnt: u32) {
+        let thread_param = Box::new(ThreadParamFast {
+            receive_buffer: vec![0u8; 0],
+            pby_temp_buffer: vec![0u8; FAST_RECEIVE_BUF_SIZE as usize],
+            pby_conv_buffer: vec![0u8; FAST_RECEIVE_BUF_SIZE as usize * 2],
+            pby_conv_end_buffer: vec![0u8; FAST_RECEIVE_BUF_SIZE as usize],
+            dw_conv_buffer_index: 0,
+            b_is_enabled: true,
+            dw_profile_max: dw_cnt,
+            dw_profile_loop_cnt: 0,
+            dw_profile_cnt: 0,
+            dw_profile_size: 0,
+            dw_profile_size32: 0,
+            w_unit: 0,
+            by_kind: 0,
+            n_buffer_size: 0,
+            simple_array_z_unit_um: 0.0,
+        });
+        THREAD_PARAM.store(Box::into_raw(thread_param), Ordering::SeqCst);
+    }
+    fn set_thread_param_fast(&mut self, dw_profile_cnt: u32, by_kind: u8, w_unit: u16) {
+        let thread_param = unsafe { &mut *THREAD_PARAM.load(Ordering::SeqCst) };
+        thread_param.dw_profile_cnt = dw_profile_cnt;
+        thread_param.by_kind = by_kind;
+        thread_param.w_unit = w_unit;
+        thread_param.simple_array_z_unit_um = (w_unit as f32 * 8.0) / 100.0;
+        let mut dw_size;
+        let is_brightness = (by_kind & BRIGHTNESS_VALUE) == BRIGHTNESS_VALUE;
+        if is_brightness {
+            dw_size = div_round_up(thread_param.dw_profile_cnt * 20, 32)
+                + div_round_up(thread_param.dw_profile_cnt * 10, 32);
+        } else {
+            dw_size = div_round_up(thread_param.dw_profile_cnt * 20, 32);
+        }
+        dw_size =
+            (dw_size * std::mem::size_of::<u32>() as u32) + PROF_HEADER_LEN + PROF_CHECKSUM_LEN;
+        thread_param.dw_profile_size = dw_size;
+        dw_size = thread_param.dw_profile_cnt;
+        if is_brightness {
+            dw_size *= 2;
+        }
+        dw_size =
+            (dw_size * std::mem::size_of::<u32>() as u32) + PROF_HEADER_LEN + PROF_CHECKSUM_LEN;
+        thread_param.dw_profile_size32 = dw_size;
+        thread_param.n_buffer_size = dw_size * thread_param.dw_profile_max;
+        thread_param.receive_buffer = vec![0u8; (dw_size * thread_param.dw_profile_max) as usize];
+        THREAD_PARAM.store(thread_param, Ordering::SeqCst);
     }
 }
