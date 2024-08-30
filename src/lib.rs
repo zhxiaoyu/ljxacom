@@ -20,6 +20,7 @@ pub fn open_device(
 pub fn close_device(device_id: i32) {
     unsafe { LJXA_ACQ_CloseDevice(device_id) }
 }
+#[cfg(target_os = "windows")]
 pub fn acquire(
     device_id: i32,
     height_image: &mut [u16],
@@ -37,13 +38,50 @@ pub fn acquire(
         )
     }
 }
+#[cfg(target_os = "linux")]
+pub fn acquire(
+    device_id: i32,
+    height_image: &mut [u16],
+    luminance_image: &mut [u8],
+    set_param: &mut LJXA_ACQ_SETPARAM,
+    get_param: &mut LJXA_ACQ_GETPARAM,
+) -> std::os::raw::c_long {
+    unsafe {
+        LJXA_ACQ_Acquire(
+            device_id,
+            height_image.as_mut_ptr(),
+            luminance_image.as_mut_ptr(),
+            set_param,
+            get_param,
+        )
+    }
+}
 pub fn acquire_start_async(device_id: i32, set_param: &mut LJXA_ACQ_SETPARAM) -> std::os::raw::c_long {
     unsafe { LJXA_ACQ_StartAsync(device_id, set_param) }
 }
+#[cfg(target_os = "windows")]
 pub fn acquire_async(
     device_id: i32,
     height_image: &mut [u16],
     luminance_image: &mut [u16],
+    set_param: &mut LJXA_ACQ_SETPARAM,
+    get_param: &mut LJXA_ACQ_GETPARAM,
+) -> std::os::raw::c_long {
+    unsafe {
+        LJXA_ACQ_AcquireAsync(
+            device_id,
+            height_image.as_mut_ptr(),
+            luminance_image.as_mut_ptr(),
+            set_param,
+            get_param,
+        )
+    }
+}
+#[cfg(target_os = "linux")]
+pub fn acquire_async(
+    device_id: i32,
+    height_image: &mut [u16],
+    luminance_image: &mut [u8],
     set_param: &mut LJXA_ACQ_SETPARAM,
     get_param: &mut LJXA_ACQ_GETPARAM,
 ) -> std::os::raw::c_long {
