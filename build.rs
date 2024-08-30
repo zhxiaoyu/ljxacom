@@ -47,6 +47,14 @@ fn main() {
             "x86"
         };
 
+        cc::Build::new()
+        .cpp(true)
+        .define("LJXA_ACQ_API_EXPORT", None)
+        .include("src/clib/windows/include")
+        .file("src/clib/windows/libsrc/LJXA_ACQ.cpp")
+        .compile("LJXA_ACQ");
+        println!("cargo:rustc-link-lib=LJXA_ACQ");
+
         let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
         let bindings_path = out_path.join("bindings.rs");
 
