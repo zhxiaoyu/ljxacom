@@ -31,11 +31,11 @@ int LJXA_ACQ_OpenDevice(int lDeviceId, LJX8IF_ETHERNET_CONFIG *EthernetConfig, i
 void LJXA_ACQ_CloseDevice(int lDeviceId);
 
 //Blocking I/F
-int LJXA_ACQ_Acquire(int lDeviceId, unsigned short *heightImage, unsigned char *luminanceImage, LJXA_ACQ_SETPARAM *setParam, LJXA_ACQ_GETPARAM *getParam);
+int LJXA_ACQ_Acquire(int lDeviceId, unsigned short *heightImage, unsigned short *luminanceImage, LJXA_ACQ_SETPARAM *setParam, LJXA_ACQ_GETPARAM *getParam);
 
 //Non-blocking I/F
 int LJXA_ACQ_StartAsync(int lDeviceId, LJXA_ACQ_SETPARAM *setParam);
-int LJXA_ACQ_AcquireAsync(int lDeviceId, unsigned short *heightImage, unsigned char *luminanceImage, LJXA_ACQ_SETPARAM *setParam, LJXA_ACQ_GETPARAM *getParam);
+int LJXA_ACQ_AcquireAsync(int lDeviceId, unsigned short *heightImage, unsigned short *luminanceImage, LJXA_ACQ_SETPARAM *setParam, LJXA_ACQ_GETPARAM *getParam);
 
 }
 #endif /* _LJXA_ACQ_H */

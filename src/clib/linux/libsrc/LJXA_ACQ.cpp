@@ -346,7 +346,7 @@ int LJXA_ACQ_AcquireAsync(int lDeviceId, unsigned short *heightImage, unsigned s
 }
 
 mutex mtx;
-void myCallbackFunc(LJX8IF_PROFILE_HEADER *pProfileHeaderArray, WORD *pHeightProfileArray, WORD *pLuminanceProfileArray, DWORD dwLuminanceEnable, DWORD dwProfileDataCount, DWORD dwCount, DWORD dwNotify, DWORD dwUser)
+void myCallbackFunc(LJX8IF_PROFILE_HEADER *pProfileHeaderArray, unsigned short *pHeightProfileArray, unsigned short *pLuminanceProfileArray, unsigned long dwLuminanceEnable, unsigned long dwProfileDataCount, unsigned long dwCount, unsigned long dwNotify, unsigned long dwUser)
 {
 	if ((dwNotify != 0) || (dwNotify & 0x10000) != 0)
 		return;
