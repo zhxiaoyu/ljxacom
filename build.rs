@@ -73,23 +73,10 @@ fn main() {
         }
 
         println!("cargo:rustc-link-search=src/clib/windows/{}", arch_dir);
-        println!("cargo:rustc-link-lib=LJX8_IF");
 
         // 获取 target 目录路径
-        let target_dir = PathBuf::from(
-            env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR 环境变量未定义"),
-        )
-        .join("target")
-        .join(if cfg!(debug_assertions) {
-            "debug"
-        } else {
-            "release"
-        });
-
-        // 确保目标目录存在
-        if !target_dir.exists() {
-            std::fs::create_dir_all(&target_dir).expect("无法创建 target 目录");
-        }
+        let target_dir =
+            PathBuf::from(env::var("OUT_DIR").expect("CARGO_MANIFEST_DIR 环境变量未定义"));
 
         // 构建 DLL 的源路径和目标路径
         let dll_src = PathBuf::from(format!("src/clib/windows/{}/LJX8_IF.dll", arch_dir));
@@ -104,7 +91,8 @@ fn main() {
                 e
             );
         }
-
+        println!("cargo:rustc-link-lib=dylib=LJX8_IF");
+        println!("cargo:rustc-link-search=native={}", target_dir.display());
         println!(
             "cargo:rerun-if-changed=src/clib/windows/{}/LJX8_IF.dll",
             arch_dir

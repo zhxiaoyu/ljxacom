@@ -6,7 +6,7 @@
 ### Add ljxacom to your Cargo.toml
 ```toml
 [dependencies]
-ljxacom = "0.1.3"
+ljxacom = "0.1.5"
 ```
 ### Example
 ```rust
