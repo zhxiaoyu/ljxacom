@@ -76,11 +76,15 @@ fn main() {
 
         // 获取 target 目录路径
         let target_dir =
-            PathBuf::from(env::var("OUT_DIR").expect("CARGO_MANIFEST_DIR 环境变量未定义"));
+            PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR 环境变量未定义"));
 
         // 构建 DLL 的源路径和目标路径
         let dll_src = PathBuf::from(format!("src/clib/windows/{}/LJX8_IF.dll", arch_dir));
-        let dll_dest = target_dir.join("LJX8_IF.dll");
+        let dll_dest = target_dir
+            .ancestors()
+            .nth(3)
+            .expect("Failed to find target directory")
+            .join("LJX8_IF.dll");
 
         // 复制 DLL 文件
         if let Err(e) = std::fs::copy(&dll_src, &dll_dest) {
