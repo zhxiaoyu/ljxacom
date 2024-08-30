@@ -91,6 +91,21 @@ fn main() {
                 e
             );
         }
+
+        // 构建 lib 的源路径和目标路径
+        let lib_src = PathBuf::from(format!("src/clib/windows/{}/LJX8_IF.lib", arch_dir));
+        let lib_dest = target_dir.join("LJX8_IF.lib");
+
+        // 复制 lib 文件
+        if let Err(e) = std::fs::copy(&lib_src, &lib_dest) {
+            panic!(
+                "无法复制 LJX8_IF.lib 从 {} 到 {}: {}",
+                lib_src.display(),
+                lib_dest.display(),
+                e
+            );
+        }
+
         println!("cargo:rustc-link-lib=dylib=LJX8_IF");
         println!("cargo:rustc-link-search=native={}", target_dir.display());
         println!(
