@@ -14,7 +14,10 @@ fn main() {
     let use_external_batch_start = 0;
 
     let mut height_image = [0u16; X_IMAGE_SIZE * Y_IMAGE_SIZE];
+    #[cfg(target_os = "windows")]
     let mut luminance_image = [0u16; X_IMAGE_SIZE * Y_IMAGE_SIZE];
+    #[cfg(target_os = "linux")]
+    let mut luminance_image = [0u8; X_IMAGE_SIZE * Y_IMAGE_SIZE];
 
     let mut set_param = ljxacom::LJXA_ACQ_SETPARAM {
         y_linenum: Y_IMAGE_SIZE as i32,
