@@ -19,8 +19,17 @@ fn main() {
     #[cfg(target_os = "linux")]
     let mut luminance_image = [0u8; X_IMAGE_SIZE * Y_IMAGE_SIZE];
 
+    #[cfg(target_os = "windows")]
     let mut set_param = ljxacom::LJXA_ACQ_SETPARAM {
         y_linenum: Y_IMAGE_SIZE as i32,
+        y_pitch_um: y_pitch_um,
+        timeout_ms: timeout_ms,
+        use_external_batchStart: use_external_batch_start,
+    };
+    #[cfg(target_os = "linux")]
+    let mut set_param = ljxacom::LJXA_ACQ_SETPARAM {
+        y_linenum: Y_IMAGE_SIZE as i32,
+        interpolateLines: 0,
         y_pitch_um: y_pitch_um,
         timeout_ms: timeout_ms,
         use_external_batchStart: use_external_batch_start,
