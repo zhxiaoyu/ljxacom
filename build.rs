@@ -48,11 +48,11 @@ fn main() {
         };
 
         cc::Build::new()
-        .cpp(true)
-        .define("LJXA_ACQ_API_EXPORT", None)
-        .include("src/clib/windows/include")
-        .file("src/clib/windows/libsrc/LJXA_ACQ.cpp")
-        .compile("LJXA_ACQ");
+            .cpp(true)
+            .define("LJXA_ACQ_API_EXPORT", None)
+            .include("src/clib/windows/include")
+            .file("src/clib/windows/libsrc/LJXA_ACQ.cpp")
+            .compile("LJXA_ACQ");
         println!("cargo:rustc-link-lib=LJXA_ACQ");
 
         let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -75,19 +75,34 @@ fn main() {
         println!("cargo:rustc-link-search=src/clib/windows/{}", arch_dir);
         println!("cargo:rustc-link-lib=LJX8_IF");
 
-        // 复制 LJX8_IF.dll 到 target 目录
-        let target_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-            .join("target")
-            .join(if cfg!(debug_assertions) {
-                "debug"
-            } else {
-                "release"
-            });
+        // 获取 target 目录路径
+        let target_dir = PathBuf::from(
+            env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR 环境变量未定义"),
+        )
+        .join("target")
+        .join(if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        });
+
+        // 确保目标目录存在
+        if !target_dir.exists() {
+            std::fs::create_dir_all(&target_dir).expect("无法创建 target 目录");
+        }
+
+        // 构建 DLL 的源路径和目标路径
         let dll_src = PathBuf::from(format!("src/clib/windows/{}/LJX8_IF.dll", arch_dir));
         let dll_dest = target_dir.join("LJX8_IF.dll");
 
+        // 复制 DLL 文件
         if let Err(e) = std::fs::copy(&dll_src, &dll_dest) {
-            panic!("无法复制 LJX8_IF.dll 到 target 目录: {}", e);
+            panic!(
+                "无法复制 LJX8_IF.dll 从 {} 到 {}: {}",
+                dll_src.display(),
+                dll_dest.display(),
+                e
+            );
         }
 
         println!(
