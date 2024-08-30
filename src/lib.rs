@@ -5,10 +5,10 @@
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 pub fn initialize() -> i32 {
-    unsafe { LJX8IF_Initialize() }
+    unsafe { LJX8IF_Initialize().try_into().unwrap() }
 }
 pub fn finalize() -> i32 {
-    unsafe { LJX8IF_Finalize() }
+    unsafe { LJX8IF_Finalize().try_into().unwrap() }
 }
 pub fn open_device(
     device_id: i32,
