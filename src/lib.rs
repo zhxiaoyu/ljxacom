@@ -4,21 +4,21 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-pub fn initialize() -> std::os::raw::c_long {
-    unsafe { LJX8IF_Initialize() }
+pub fn initialize() -> i32 {
+    unsafe { LJX8IF_Initialize().into() }
 }
-pub fn finalize() -> std::os::raw::c_long {
-    unsafe { LJX8IF_Finalize() }
+pub fn finalize() -> i32 {
+    unsafe { LJX8IF_Finalize().into() }
 }
 pub fn open_device(
     device_id: i32,
     ethernet_config: &mut LJX8IF_ETHERNET_CONFIG,
     highspeed_port_no: i32,
-) -> std::os::raw::c_long {
-    unsafe { LJXA_ACQ_OpenDevice(device_id, ethernet_config, highspeed_port_no) }
+) -> i32 {
+    unsafe { LJXA_ACQ_OpenDevice(device_id, ethernet_config, highspeed_port_no).into() }
 }
 pub fn close_device(device_id: i32) {
-    unsafe { LJXA_ACQ_CloseDevice(device_id) }
+    unsafe { LJXA_ACQ_CloseDevice(device_id).into() }
 }
 #[cfg(target_os = "windows")]
 pub fn acquire(
@@ -27,7 +27,7 @@ pub fn acquire(
     luminance_image: &mut [u16],
     set_param: &mut LJXA_ACQ_SETPARAM,
     get_param: &mut LJXA_ACQ_GETPARAM,
-) -> std::os::raw::c_long {
+) -> i32 {
     unsafe {
         LJXA_ACQ_Acquire(
             device_id,
@@ -36,6 +36,7 @@ pub fn acquire(
             set_param,
             get_param,
         )
+        .into()
     }
 }
 #[cfg(target_os = "linux")]
@@ -45,7 +46,7 @@ pub fn acquire(
     luminance_image: &mut [u8],
     set_param: &mut LJXA_ACQ_SETPARAM,
     get_param: &mut LJXA_ACQ_GETPARAM,
-) -> std::os::raw::c_long {
+) -> i32 {
     unsafe {
         LJXA_ACQ_Acquire(
             device_id,
@@ -54,10 +55,11 @@ pub fn acquire(
             set_param,
             get_param,
         )
+        .into()
     }
 }
-pub fn acquire_start_async(device_id: i32, set_param: &mut LJXA_ACQ_SETPARAM) -> std::os::raw::c_long {
-    unsafe { LJXA_ACQ_StartAsync(device_id, set_param) }
+pub fn acquire_start_async(device_id: i32, set_param: &mut LJXA_ACQ_SETPARAM) -> i32 {
+    unsafe { LJXA_ACQ_StartAsync(device_id, set_param).into() }
 }
 #[cfg(target_os = "windows")]
 pub fn acquire_async(
@@ -66,7 +68,7 @@ pub fn acquire_async(
     luminance_image: &mut [u16],
     set_param: &mut LJXA_ACQ_SETPARAM,
     get_param: &mut LJXA_ACQ_GETPARAM,
-) -> std::os::raw::c_long {
+) -> i32 {
     unsafe {
         LJXA_ACQ_AcquireAsync(
             device_id,
@@ -75,6 +77,7 @@ pub fn acquire_async(
             set_param,
             get_param,
         )
+        .into()
     }
 }
 #[cfg(target_os = "linux")]
@@ -84,7 +87,7 @@ pub fn acquire_async(
     luminance_image: &mut [u8],
     set_param: &mut LJXA_ACQ_SETPARAM,
     get_param: &mut LJXA_ACQ_GETPARAM,
-) -> std::os::raw::c_long {
+) -> i32 {
     unsafe {
         LJXA_ACQ_AcquireAsync(
             device_id,
@@ -93,6 +96,7 @@ pub fn acquire_async(
             set_param,
             get_param,
         )
+        .into()
     }
 }
 #[cfg(test)]
