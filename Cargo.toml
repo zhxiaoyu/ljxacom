@@ -1,6 +1,6 @@
 [package]
 name = "ljxacom"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Zhang Xiaoyu <zhangxiaoyu1017@gmail.com>"]
 description = "Rust bindings for Keyence LJ-X8000A CommLib"

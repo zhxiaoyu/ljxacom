@@ -1,15 +1,3 @@
-# ljxacom
-![workflow](https://github.com/zhxiaoyu/ljxacom/actions/workflows/build.yml/badge.svg)
-![crates.io](https://img.shields.io/crates/v/ljxacom)
-### Rust bindings for Keyence LJ-X8000A CommLib
-## Usage
-### Add ljxacom to your Cargo.toml
-```toml
-[dependencies]
-ljxacom = "0.1.3"
-```
-### Example
-```rust
 fn main() {
     let mut ethernet_config = ljxacom::LJX8IF_ETHERNET_CONFIG {
         abyIpAddress: [192, 168, 0, 1],
@@ -59,7 +47,3 @@ fn main() {
     let result = ljxacom::finalize();
     println!("finalize result: 0x{:02X}", result);
 }
-
-```
-## License
-Distributed under the [MIT License](LICENSE).

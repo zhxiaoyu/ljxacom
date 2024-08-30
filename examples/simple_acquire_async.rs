@@ -1,15 +1,4 @@
-# ljxacom
-![workflow](https://github.com/zhxiaoyu/ljxacom/actions/workflows/build.yml/badge.svg)
-![crates.io](https://img.shields.io/crates/v/ljxacom)
-### Rust bindings for Keyence LJ-X8000A CommLib
-## Usage
-### Add ljxacom to your Cargo.toml
-```toml
-[dependencies]
-ljxacom = "0.1.3"
-```
-### Example
-```rust
+use std::time::{Duration, Instant};
 fn main() {
     let mut ethernet_config = ljxacom::LJX8IF_ETHERNET_CONFIG {
         abyIpAddress: [192, 168, 0, 1],
@@ -47,19 +36,27 @@ fn main() {
     println!("initialize result: 0x{:02X}", result);
     let result = ljxacom::open_device(device_id, &mut ethernet_config, high_speed_port_no);
     println!("open_device result: 0x{:02X}", result);
-    let result = ljxacom::acquire(
-        device_id,
-        &mut height_image,
-        &mut luminance_image,
-        &mut set_param,
-        &mut get_param,
-    );
-    println!("acquire result: 0x{:02X}", result);
+    let result = ljxacom::acquire_start_async(device_id, &mut set_param);
+    println!("acquire_start result: 0x{:02X}", result);
+
+    let start = Instant::now();
+    loop {
+        let result = ljxacom::acquire_async(
+            device_id,
+            &mut height_image,
+            &mut luminance_image,
+            &mut set_param,
+            &mut get_param,
+        );
+        if result == ljxacom::LJX8IF_RC_OK as i32 {
+            break;
+        }
+        if start.elapsed() > Duration::from_millis(timeout_ms as u64) {
+            println!("acquire_async timed out");
+            break;
+        }
+    }
     ljxacom::close_device(device_id);
     let result = ljxacom::finalize();
     println!("finalize result: 0x{:02X}", result);
 }
-
-```
-## License
-Distributed under the [MIT License](LICENSE).
