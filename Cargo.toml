@@ -1,6 +1,6 @@
 [package]
 name = "ljxacom"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 authors = ["Zhang Xiaoyu <zhangxiaoyu1017@gmail.com>"]
 description = "Rust bindings for Keyence LJ-X8000A CommLib"
@@ -13,4 +13,3 @@ keywords = ["Keyence", "ljxacom", "LJXA", "LJX8","LJ-X8000A"]
 
 [build-dependencies]
 cc = "1.0"
-bindgen = "0.65.1"
